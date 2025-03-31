@@ -22,10 +22,4 @@ public class ApiError {
         this.message = message;
     }
 
-    public ApiError(String message, Throwable ex) {
-        this();
-        this.message = message;
-        this.debugMessage = ex.getLocalizedMessage();
-    }
-
 }
