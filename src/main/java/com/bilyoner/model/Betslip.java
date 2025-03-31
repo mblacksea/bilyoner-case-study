@@ -1,9 +1,12 @@
 package com.bilyoner.model;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @Entity
@@ -16,22 +19,15 @@ public class Betslip {
     @Column(nullable = false)
     private String customerId;
 
-    @ManyToOne
-    @JoinColumn(name = "event_id", nullable = false)
-    private Event event;
-
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    private BetType selectedBetType; // HOME_WIN, DRAW, AWAY_WIN
-
-    @Column(nullable = false)
-    private Double odds;
-
     @Column(nullable = false)
     private BigDecimal amount;
 
     @Column(nullable = false)
     private Integer multipleCount;
+
+    @JsonManagedReference
+    @OneToMany(mappedBy = "betslip", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Bet> bets = new ArrayList<>();
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
