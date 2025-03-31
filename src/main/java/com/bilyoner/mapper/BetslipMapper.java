@@ -13,6 +13,10 @@ import java.util.ArrayList;
 public class BetslipMapper {
 
     public Betslip toBetslip(CreateBetslipRequest request, String customerId) {
+        if (request == null) {
+            throw new IllegalArgumentException("CreateBetslipRequest cannot be null");
+        }
+        
         Betslip betslip = new Betslip();
         betslip.setCustomerId(customerId);
         betslip.setAmount(request.getAmount());
@@ -22,6 +26,16 @@ public class BetslipMapper {
     }
 
     public Bet toBet(BetRequestDTO request, Event event, Betslip betslip) {
+        if (request == null) {
+            throw new IllegalArgumentException("BetRequestDTO cannot be null");
+        }
+        if (event == null) {
+            throw new IllegalArgumentException("Event cannot be null");
+        }
+        if (betslip == null) {
+            throw new IllegalArgumentException("Betslip cannot be null");
+        }
+        
         Bet bet = new Bet();
         bet.setBetslip(betslip);
         bet.setEvent(event);
