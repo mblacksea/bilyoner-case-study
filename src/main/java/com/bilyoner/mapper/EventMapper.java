@@ -4,6 +4,7 @@ import com.bilyoner.dto.CreateEventRequest;
 import com.bilyoner.dto.EventDTO;
 import com.bilyoner.model.Event;
 import org.springframework.stereotype.Component;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -21,7 +22,7 @@ public class EventMapper {
         event.setStartTime(request.getStartTime());
         return event;
     }
-    
+
     public EventDTO eventToEventDTO(Event event) {
         EventDTO dto = new EventDTO();
         dto.setId(event.getId());
