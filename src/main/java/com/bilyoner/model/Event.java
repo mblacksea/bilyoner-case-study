@@ -31,7 +31,7 @@ public class Event {
     private Double awayWinOdds;
 
     @Column(nullable = false)
-    private LocalDateTime startTime;
+    private LocalDateTime startTime = LocalDateTime.now();
 
     @Version
     private Long version;
