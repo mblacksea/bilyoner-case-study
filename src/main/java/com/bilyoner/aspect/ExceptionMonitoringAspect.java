@@ -15,10 +15,9 @@ public class ExceptionMonitoringAspect {
 
     @AfterThrowing(pointcut = "execution(* com.bilyoner..*.*(..))", throwing = "exception")
     public void logException(JoinPoint joinPoint, Throwable exception) {
-        log.error("Exception in {} with args = {} \nException message: {}",
+        log.error("Exception in {} with args = {}", 
                 joinPoint.getSignature().toShortString(),
                 Arrays.toString(joinPoint.getArgs()),
-                exception.getMessage(),
                 exception);
     }
 } 
