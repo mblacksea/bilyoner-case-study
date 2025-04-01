@@ -2,7 +2,7 @@
 
 Bu proje, çoklu bahis kuponu yönetimi için geliştirilmiş bir Spring Boot uygulamasıdır. Kullanıcılar, farklı spor müsabakaları için bahis oynayabilir ve birden fazla bahisi tek bir kuponda birleştirebilir.
 
-## 🚀 Özellikler
+##  Özellikler
 
 - Canlı maç ve oran takibi
 - Çoklu bahis kuponu oluşturma
@@ -11,7 +11,7 @@ Bu proje, çoklu bahis kuponu yönetimi için geliştirilmiş bir Spring Boot uy
 - H2 veritabanı ile in-memory veri saklama
 - Swagger UI ile API dokümantasyonu
 
-## 🛠 Teknolojiler
+##  Teknolojiler
 
 - Java 17
 - Spring Boot 3.2.3
@@ -21,7 +21,7 @@ Bu proje, çoklu bahis kuponu yönetimi için geliştirilmiş bir Spring Boot uy
 - Lombok
 - SpringDoc OpenAPI (Swagger)
 
-## 🏃‍♂️ Başlangıç
+## Başlangıç
 
 ### Kurulum
 
@@ -38,17 +38,17 @@ mvn clean install
 
 3. Uygulamayı çalıştırın:
 ```bash
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Djasypt.encryptor.password=secretKey"    
 ```
 
-## 📚 API Dokümantasyonu
+## API Dokümantasyonu
 
 API dokümantasyonuna aşağıdaki URL'lerden erişebilirsiniz:
 
 - Swagger UI: http://localhost:8080/swagger-ui.html
 - OpenAPI JSON: http://localhost:8080/v3/api-docs
 
-### 🎯 API Endpoints
+### API Endpoints
 
 #### Event Management
 
@@ -59,7 +59,7 @@ API dokümantasyonuna aşağıdaki URL'lerden erişebilirsiniz:
 
 - `POST /api/betslips` - Yeni bahis kuponu oluşturur
 
-## ⚙️ Konfigürasyon
+## Konfigürasyon
 
 Temel konfigürasyon ayarları `application.properties` dosyasında bulunmaktadır:
 
@@ -70,14 +70,14 @@ server.port=8080
 # Betting Configuration
 app.betting.max-bets-per-event=500
 
-# Transaction Configuration
-spring.transaction.default-timeout=2s
-
 # Scheduling Configuration
 app.scheduling.odds-update-interval=1000
+
+# Execution Time Threshold
+app.execution.time-threshold=1000
 ```
 
-## 🌐 WebSocket Desteği
+## WebSocket Desteği
 
 Oranların gerçek zamanlı güncellenmesi için WebSocket endpoint'i:
 
@@ -90,10 +90,200 @@ Subscribe olunacak topic:
 /topic/events
 ```
 
-## 🗄️ Veritabanı
+## Veritabanı
 
 H2 Console'a erişim:
 - URL: http://localhost:8080/h2-console
 - JDBC URL: jdbc:h2:mem:bettingdb
 - Username: sa
-- Password: as
+- Password: sa
+
+# Betting System - Akış Dokümanı
+
+## 1. Sistem Bileşenleri
+
+### 1.1 Backend Servisler
+- EventService: Maç ve oran yönetimi
+- BetslipService: Bahis kuponu işlemleri
+- WebSocketNotificationService: Gerçek zamanlı veri akışı
+
+### 1.2 Veritabanı Tabloları
+- events: Maç bilgileri ve oranlar
+- betslips: Bahis kuponları
+- bets: Kupon detayları
+
+### 1.3 İletişim Kanalları
+- REST API: Bahis işlemleri için
+- WebSocket: Gerçek zamanlı oran güncellemeleri için
+
+## 2. Oran Güncelleme Akışı
+
+### 2.1 Scheduled Job
+```java
+@Scheduled(fixedRateString = "${app.scheduling.odds-update-interval}") // Her saniye çalışır (Parametrik)
+public void updateRandomOdds() {
+    List<Event> events = eventRepository.findAllWithLocking();
+    events.forEach(event -> {
+        updateEventOdds(event);
+        notifyClients(event);
+    });
+}
+```
+
+### 2.2 Güncelleme Süreci
+1. Job her saniye tetiklenir
+2. Aktif maçlar optimistic lock ile getirilir
+3. Her maç için:
+    - Oranlar ±%5 aralığında rastgele değiştirilir
+    - Yeni oranlar kaydedilir
+    - WebSocket üzerinden client'lara bildirim gönderilir
+
+### 2.3 WebSocket Bildirimi
+```json
+{
+  "eventId": 1,
+  "homeWinOdds": 2.15,
+  "drawOdds": 3.40,
+  "awayWinOdds": 3.25,
+  "updateDate": "2024-03-15T10:30:15"
+}
+```
+
+## 3. Bahis Kuponu Oluşturma Akışı
+
+### 3.1 Client İsteği
+```json
+{
+  "amount": 100,
+  "multipleCount": 2,
+  "bets": [
+    {
+      "eventId": 1,
+      "selectedBetType": "HOME_WIN",
+      "expectedOdds": 2.15
+    }
+  ]
+}
+```
+
+### 3.2 Validasyon Süreci
+1. Kupon tutarı kontrolü
+    - Maksimum tutar: 10000 TL
+    - Formül: amount * multipleCount <= 10000
+
+2. Maç başına bahis limiti kontrolü
+    - Maksimum: 500 bahis/maç/kullanıcı
+    - Mevcut bahisler + yeni bahisler <= 500
+
+3. Oran tutarlılığı kontrolü
+    - Pessimistic lock ile güncel oranlar alınır
+    - Beklenen oran ile güncel oran karşılaştırılır
+    - Farklılık varsa işlem reddedilir
+
+### 3.3 Veri Tutarlılığı Mekanizmaları
+
+#### Pessimistic Locking
+```java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT e FROM Event e WHERE e.id = :eventId")
+Optional<Event> findLatestEventByIdWithLock(@Param("eventId") Long eventId);
+```
+
+#### Transaction Yönetimi
+```java
+@Transactional(timeout = 2)
+public Betslip createBetslip(CreateBetslipRequest request, String customerId) {
+    // ... işlemler
+}
+```
+
+## 4. Örnek Senaryo
+
+### 4.1 Başarılı Bahis Senaryosu
+1. Client WebSocket bağlantısı açar
+2. Sürekli oran güncellemelerini dinler
+3. Kullanıcı 2.15 oranından Arsenal'e bahis yapmak ister
+4. CreateBetslip isteği gönderilir
+5. Backend:
+    - Maçı kilitler
+    - Oranları kontrol eder
+    - Limitleri kontrol eder
+    - Kuponu kaydeder
+6. Başarılı yanıt döner
+
+### 4.2 Başarısız Bahis Senaryosu
+1. Client WebSocket bağlantısı açar
+2. Kullanıcı 2.15 oranından bahis seçer
+3. Tam bu sırada scheduled job oranı 2.20'ye günceller
+4. Client eski oran (2.15) ile istek gönderir
+5. Backend:
+    - Maçı kilitler
+    - Oranları kontrol eder
+    - Oran değişikliği tespit edilir
+    - İşlemi reddeder
+6. Hata yanıtı döner
+
+## 5. Hata Senaryoları ve Çözümleri
+
+### 5.1 Oran Değişikliği
+```java
+if (!currentOdds.equals(betRequest.getExpectedOdds())) {
+        String errorMessage = String.format("Odds have changed for event ID: %d. Expected: %f, Current: %f",
+        betRequest.getEventId(), betRequest.getExpectedOdds(), currentOdds);
+        log.warn(errorMessage);
+        throw new IllegalStateException(errorMessage);
+}
+```
+
+### 5.2 Limit Aşımı
+```java
+if (totalExistingBets + request.getMultipleCount() > maxBetsPerEvent) {
+        String totalExistingBetsMessage = String.format("Maximum bet limit (%d) exceeded for event ID: %d",
+        maxBetsPerEvent, betRequest.getEventId());
+        throw new IllegalStateException(totalExistingBetsMessage);
+}
+```
+
+### 5.3 Deadlock Önleme
+- Transaction timeout: 2 saniye
+- Pessimistic lock kullanımı
+- İşlem sırası: Önce limit kontrolü, sonra oran kontrolü
+
+## 6. Monitoring ve Logging
+
+### 6.1 Aspect-Based Logging
+```java
+@Around("execution(* com.bilyoner.controller.*.*(..))")
+public Object logRequestResponse(ProceedingJoinPoint joinPoint)
+```
+
+### 6.2 Performance Monitoring
+```java
+@Around("@within(org.springframework.stereotype.Service)")
+public Object monitorServicePerformance(ProceedingJoinPoint joinPoint)
+```
+
+### 6.3 Exception Handling
+```java
+@AfterThrowing(pointcut = "execution(* com.bilyoner..*.*(..))")
+public void logException(JoinPoint joinPoint, Throwable exception)
+```
+
+## Güvenlik
+
+### Jasypt Şifreleme
+Uygulama, veritabanı şifresini encrypted olarak application.properties dosyasında saklamaktadır.
+
+
+#### Kullanım
+1. Şifre: sa
+2. SecretKey: secretKey
+4. Uygulamayı çalıştırırken secret key'i vm parametre olarak geçmeliyiz:
+```bash
+mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Djasypt.encryptor.password=secretKey"
+
+veya
+
+Spring Boot Edit Configuration -> VM Options: -Djasypt.encryptor.password=secretKey
+değerini eklemeliyiz.
+```
