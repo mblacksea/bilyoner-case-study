@@ -24,7 +24,7 @@ public class BetslipService {
     @Value("${app.betting.max-bets-per-event}")
     private int maxBetsPerEvent;
 
-    @Transactional
+    @Transactional(timeout = 2)
     public Betslip createBetslip(CreateBetslipRequest request, String customerId) {
         Betslip betslip = betslipMapper.toBetslip(request, customerId);
 
@@ -32,15 +32,14 @@ public class BetslipService {
             Long existingBets = betslipRepository.countBetslipsByEventIdAndCustomerId(
                     betRequest.getEventId(), customerId);
             long totalExistingBets = existingBets != null ? existingBets : 0;
-            
+
             if (totalExistingBets + request.getMultipleCount() > maxBetsPerEvent) {
-                throw new IllegalStateException(
-                        String.format("Maximum bet limit (%d) exceeded for event ID: %d",
-                                maxBetsPerEvent, betRequest.getEventId())
-                );
+                String totalExistingBetsMessage = String.format("Maximum bet limit (%d) exceeded for event ID: %d",
+                        maxBetsPerEvent, betRequest.getEventId());
+                throw new IllegalStateException(totalExistingBetsMessage);
             }
 
-            Event event = eventService.getEventById(betRequest.getEventId());
+            Event event = eventService.findLatestEventByIdWithLock(betRequest.getEventId());
             Double currentOdds = switch (betRequest.getSelectedBetType()) {
                 case HOME_WIN -> event.getHomeWinOdds();
                 case DRAW -> event.getDrawOdds();
@@ -48,8 +47,10 @@ public class BetslipService {
             };
 
             if (!currentOdds.equals(betRequest.getExpectedOdds())) {
-                log.warn("Odds have changed for event ID: {}. Expected: {}, Current: {}",
+                String errorMessage = String.format("Odds have changed for event ID: %d. Expected: %f, Current: %f",
                         betRequest.getEventId(), betRequest.getExpectedOdds(), currentOdds);
+                log.warn(errorMessage);
+                throw new IllegalStateException(errorMessage);
             }
 
             Bet bet = betslipMapper.toBet(betRequest, event, betslip);

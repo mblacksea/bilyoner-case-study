@@ -33,6 +33,16 @@ public class Event {
     @Column(nullable = false)
     private LocalDateTime startTime = LocalDateTime.now();
 
+    @Column(nullable = false)
+    private LocalDateTime createDate;
+
+    private LocalDateTime updateDate;
+
+    @PrePersist
+    protected void onCreate() {
+        createDate = LocalDateTime.now();
+    }
+
     @Version
     private Long version;
 } 
