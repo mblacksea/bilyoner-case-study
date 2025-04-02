@@ -15,9 +15,17 @@ public class ExceptionMonitoringAspect {
 
     @AfterThrowing(pointcut = "execution(* com.bilyoner..*.*(..))", throwing = "exception")
     public void logException(JoinPoint joinPoint, Throwable exception) {
-        log.error("Exception in {} with args = {}", 
-                joinPoint.getSignature().toShortString(),
-                Arrays.toString(joinPoint.getArgs()),
-                exception);
+        if (!isHandledException(exception)) {
+            log.error("Exception in {} with args = {}", 
+                    joinPoint.getSignature().toShortString(),
+                    Arrays.toString(joinPoint.getArgs()),
+                    exception);
+        }
+    }
+
+    private boolean isHandledException(Throwable exception) {
+        return exception instanceof com.bilyoner.exception.OddsChangedException ||
+               exception instanceof IllegalStateException ||
+               exception instanceof IllegalArgumentException;
     }
 } 
