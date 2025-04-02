@@ -1,25 +1,43 @@
 package com.bilyoner.dto;
 
-import com.bilyoner.exception.ApiError;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class GeneralResponseDTO {
-    private int statusCode;
-    private Object body;
-    private ApiError apiError;
+    private int status;
+    private String message;
+    private Object data;
+    private Object error;
+    private Map<String, Object> details;
 
-    public GeneralResponseDTO(int statusCode) {
-        this.statusCode = statusCode;
+    public GeneralResponseDTO(int status) {
+        this.status = status;
     }
 
-    public GeneralResponseDTO(int statusCode, Object body) {
-        this.statusCode = statusCode;
-        this.body = body;
+    public GeneralResponseDTO(int status, Object data) {
+        this.status = status;
+        this.data = data;
     }
 
+    public GeneralResponseDTO(int status, String message) {
+        this.status = status;
+        this.message = message;
+    }
+
+    public GeneralResponseDTO(int status, Object data, Object error) {
+        this.status = status;
+        this.data = data;
+        this.error = error;
+    }
+
+    public GeneralResponseDTO(int status, String message, Map<String, Object> details) {
+        this.status = status;
+        this.message = message;
+        this.details = details;
+    }
 }

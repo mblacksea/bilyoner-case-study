@@ -2,6 +2,7 @@ package com.bilyoner.service;
 
 import com.bilyoner.dto.CreateBetslipRequest;
 import com.bilyoner.dto.BetRequestDTO;
+import com.bilyoner.exception.OddsChangedException;
 import com.bilyoner.mapper.BetslipMapper;
 import com.bilyoner.model.Bet;
 import com.bilyoner.model.Betslip;
@@ -47,10 +48,9 @@ public class BetslipService {
             };
 
             if (!currentOdds.equals(betRequest.getExpectedOdds())) {
-                String errorMessage = String.format("Odds have changed for event ID: %d. Expected: %f, Current: %f",
+                log.warn("Odds have changed for event ID: {}. Expected: {}, Current: {}",
                         betRequest.getEventId(), betRequest.getExpectedOdds(), currentOdds);
-                log.warn(errorMessage);
-                throw new IllegalStateException(errorMessage);
+                throw new OddsChangedException(betRequest.getEventId(), betRequest.getExpectedOdds(), currentOdds);
             }
 
             Bet bet = betslipMapper.toBet(betRequest, event, betslip);

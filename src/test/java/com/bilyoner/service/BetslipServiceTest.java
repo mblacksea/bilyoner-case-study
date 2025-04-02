@@ -2,6 +2,7 @@ package com.bilyoner.service;
 
 import com.bilyoner.dto.BetRequestDTO;
 import com.bilyoner.dto.CreateBetslipRequest;
+import com.bilyoner.exception.OddsChangedException;
 import com.bilyoner.mapper.BetslipMapper;
 import com.bilyoner.model.Bet;
 import com.bilyoner.model.BetType;
@@ -94,7 +95,7 @@ class BetslipServiceTest {
     void should_create_betslip_successfully_when_all_conditions_are_met() {
         String customerId = "customer123";
         when(betslipRepository.countBetslipsByEventIdAndCustomerId(anyLong(), anyString())).thenReturn(0L);
-        when(eventService.getEventById(anyLong())).thenReturn(event);
+        when(eventService.findLatestEventByIdWithLock(anyLong())).thenReturn(event);
         when(betslipMapper.toBetslip(any(), anyString())).thenReturn(betslip);
         when(betslipMapper.toBet(any(), any(), any())).thenReturn(bet);
         when(betslipRepository.save(any(Betslip.class))).thenReturn(betslip);
@@ -108,7 +109,7 @@ class BetslipServiceTest {
         assertEquals(2, result.getMultipleCount());
 
         verify(betslipRepository, times(1)).countBetslipsByEventIdAndCustomerId(eq(1L), eq(customerId));
-        verify(eventService, times(1)).getEventById(eq(1L));
+        verify(eventService, times(1)).findLatestEventByIdWithLock(eq(1L));
         verify(betslipMapper, times(1)).toBetslip(eq(createBetslipRequest), eq(customerId));
         verify(betslipMapper, times(1)).toBet(eq(betRequestDTO), eq(event), eq(betslip));
         verify(betslipRepository, times(1)).save(eq(betslip));
@@ -126,32 +127,10 @@ class BetslipServiceTest {
         assertTrue(exception.getMessage().contains("Maximum bet limit"));
         
         verify(betslipRepository, times(1)).countBetslipsByEventIdAndCustomerId(eq(1L), eq(customerId));
-        verify(eventService, never()).getEventById(anyLong());
+        verify(eventService, never()).findLatestEventByIdWithLock(anyLong());
         verify(betslipMapper, times(1)).toBetslip(eq(createBetslipRequest), eq(customerId));
         verify(betslipMapper, never()).toBet(any(), any(), any());
         verify(betslipRepository, never()).save(any(Betslip.class));
-    }
-
-    @Test
-    void should_handle_odds_changes_when_creating_betslip() {
-        String customerId = "customer123";
-        betRequestDTO.setExpectedOdds(2.50);
-        
-        when(betslipRepository.countBetslipsByEventIdAndCustomerId(anyLong(), anyString())).thenReturn(0L);
-        when(eventService.getEventById(anyLong())).thenReturn(event);
-        when(betslipMapper.toBetslip(any(), anyString())).thenReturn(betslip);
-        when(betslipMapper.toBet(any(), any(), any())).thenReturn(bet);
-        when(betslipRepository.save(any(Betslip.class))).thenReturn(betslip);
-
-        Betslip result = betslipService.createBetslip(createBetslipRequest, customerId);
-
-        assertNotNull(result);
-        
-        verify(betslipRepository, times(1)).countBetslipsByEventIdAndCustomerId(eq(1L), eq(customerId));
-        verify(eventService, times(1)).getEventById(eq(1L));
-        verify(betslipMapper, times(1)).toBetslip(eq(createBetslipRequest), eq(customerId));
-        verify(betslipMapper, times(1)).toBet(eq(betRequestDTO), eq(event), eq(betslip));
-        verify(betslipRepository, times(1)).save(eq(betslip));
     }
 
     @Test
@@ -182,8 +161,8 @@ class BetslipServiceTest {
         
         when(betslipRepository.countBetslipsByEventIdAndCustomerId(eq(1L), anyString())).thenReturn(0L);
         when(betslipRepository.countBetslipsByEventIdAndCustomerId(eq(2L), anyString())).thenReturn(0L);
-        when(eventService.getEventById(eq(1L))).thenReturn(event);
-        when(eventService.getEventById(eq(2L))).thenReturn(secondEvent);
+        when(eventService.findLatestEventByIdWithLock(eq(1L))).thenReturn(event);
+        when(eventService.findLatestEventByIdWithLock(eq(2L))).thenReturn(secondEvent);
         when(betslipMapper.toBetslip(any(), anyString())).thenReturn(betslip);
         when(betslipMapper.toBet(eq(betRequestDTO), eq(event), eq(betslip))).thenReturn(bet);
         when(betslipMapper.toBet(eq(secondBetRequest), eq(secondEvent), eq(betslip))).thenReturn(secondBet);
@@ -195,11 +174,38 @@ class BetslipServiceTest {
         
         verify(betslipRepository, times(1)).countBetslipsByEventIdAndCustomerId(eq(1L), eq(customerId));
         verify(betslipRepository, times(1)).countBetslipsByEventIdAndCustomerId(eq(2L), eq(customerId));
-        verify(eventService, times(1)).getEventById(eq(1L));
-        verify(eventService, times(1)).getEventById(eq(2L));
+        verify(eventService, times(1)).findLatestEventByIdWithLock(eq(1L));
+        verify(eventService, times(1)).findLatestEventByIdWithLock(eq(2L));
         verify(betslipMapper, times(1)).toBetslip(eq(createBetslipRequest), eq(customerId));
         verify(betslipMapper, times(1)).toBet(eq(betRequestDTO), eq(event), eq(betslip));
         verify(betslipMapper, times(1)).toBet(eq(secondBetRequest), eq(secondEvent), eq(betslip));
         verify(betslipRepository, times(1)).save(eq(betslip));
+    }
+
+    @Test
+    void should_throw_exception_when_odds_have_changed() {
+        String customerId = "customer123";
+        Double expectedOdds = 2.50;
+        Double currentOdds = 2.10;
+        
+        betRequestDTO.setExpectedOdds(expectedOdds);
+        
+        when(betslipRepository.countBetslipsByEventIdAndCustomerId(anyLong(), anyString())).thenReturn(0L);
+        when(eventService.findLatestEventByIdWithLock(anyLong())).thenReturn(event);
+        when(betslipMapper.toBetslip(any(), anyString())).thenReturn(betslip);
+
+        OddsChangedException exception = assertThrows(OddsChangedException.class, () -> {
+            betslipService.createBetslip(createBetslipRequest, customerId);
+        });
+
+        assertEquals(1L, exception.getEventId());
+        assertEquals(expectedOdds, exception.getExpectedOdds());
+        assertEquals(currentOdds, exception.getCurrentOdds());
+
+        verify(betslipRepository, times(1)).countBetslipsByEventIdAndCustomerId(eq(1L), eq(customerId));
+        verify(eventService, times(1)).findLatestEventByIdWithLock(eq(1L));
+        verify(betslipMapper, times(1)).toBetslip(eq(createBetslipRequest), eq(customerId));
+        verify(betslipMapper, never()).toBet(any(), any(), any());
+        verify(betslipRepository, never()).save(any(Betslip.class));
     }
 } 

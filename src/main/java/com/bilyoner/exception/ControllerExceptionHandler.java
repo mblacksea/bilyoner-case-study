@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @RestControllerAdvice
@@ -30,6 +32,21 @@ public class ControllerExceptionHandler {
         GeneralResponseDTO response = new GeneralResponseDTO(
             HttpStatus.CONFLICT.value(),
             ex.getMessage()
+        );
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(OddsChangedException.class)
+    public ResponseEntity<GeneralResponseDTO> handleOddsChangedException(OddsChangedException ex) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("eventId", ex.getEventId());
+        details.put("expectedOdds", ex.getExpectedOdds());
+        details.put("currentOdds", ex.getCurrentOdds());
+        
+        GeneralResponseDTO response = new GeneralResponseDTO(
+            HttpStatus.CONFLICT.value(),
+            "Odds have changed. Please check the current odds and try again.",
+            details
         );
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }

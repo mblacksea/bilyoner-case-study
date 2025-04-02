@@ -109,9 +109,9 @@ class EventServiceTest {
 
     @Test
     void should_return_event_when_found_by_id() {
-        when(eventRepository.findById(anyLong())).thenReturn(Optional.of(event));
+        when(eventRepository.findLatestEventByIdWithLock(anyLong())).thenReturn(Optional.of(event));
 
-        Event result = eventService.getEventById(1L);
+        Event result = eventService.findLatestEventByIdWithLock(1L);
 
         assertNotNull(result);
         assertEquals(1L, result.getId());
@@ -119,18 +119,18 @@ class EventServiceTest {
         assertEquals("Arsenal", result.getHomeTeam());
         assertEquals("Chelsea", result.getAwayTeam());
         
-        verify(eventRepository, times(1)).findById(eq(1L));
+        verify(eventRepository, times(1)).findLatestEventByIdWithLock(eq(1L));
     }
 
     @Test
     void should_throw_exception_when_event_not_found() {
-        when(eventRepository.findById(anyLong())).thenReturn(Optional.empty());
+        when(eventRepository.findLatestEventByIdWithLock(anyLong())).thenReturn(Optional.empty());
 
         assertThrows(EntityNotFoundException.class, () -> {
-            eventService.getEventById(1L);
+            eventService.findLatestEventByIdWithLock(1L);
         });
         
-        verify(eventRepository, times(1)).findById(eq(1L));
+        verify(eventRepository, times(1)).findLatestEventByIdWithLock(1L);
     }
 
     @Test
