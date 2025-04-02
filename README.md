@@ -8,6 +8,7 @@ Bu proje, çoklu bahis kuponu yönetimi için geliştirilmiş bir Spring Boot uy
 - Çoklu bahis kuponu oluşturma
 - WebSocket ile gerçek zamanlı oran güncellemeleri
 - Müşteri bazlı bahis limiti kontrolü
+- Oran değişikliği geçmişi takibi (Append-Only)
 - H2 veritabanı ile in-memory veri saklama
 - Swagger UI ile API dokümantasyonu
 
@@ -108,7 +109,8 @@ H2 Console'a erişim:
 - WebSocketNotificationService: Gerçek zamanlı veri akışı
 
 ### 1.2 Veritabanı Tabloları
-- events: Maç bilgileri ve oranlar
+- events: Maç bilgileri ve güncel oranlar
+- event_odds_history: Oran değişikliği geçmişi
 - betslips: Bahis kuponları
 - bets: Kupon detayları
 
@@ -120,22 +122,21 @@ H2 Console'a erişim:
 
 ### 2.1 Scheduled Job
 ```java
-@Scheduled(fixedRateString = "${app.scheduling.odds-update-interval}") // Her saniye çalışır (Parametrik)
+@Scheduled(fixedRateString = "${app.scheduling.odds-update-interval}")
 public void updateRandomOdds() {
-    List<Event> events = eventRepository.findAllWithLocking();
-    events.forEach(event -> {
-        updateEventOdds(event);
-        notifyClients(event);
-    });
+    //işlemler
 }
+
 ```
 
 ### 2.2 Güncelleme Süreci
 1. Job her saniye tetiklenir
-2. Aktif maçlar optimistic lock ile getirilir
+2. Aktif maçlar optimistic lock ile getirilir (`@Version` field kullanılarak)
 3. Her maç için:
-    - Oranlar ±%5 aralığında rastgele değiştirilir
-    - Yeni oranlar kaydedilir
+    - Yeni oranlar ±%5 aralığında rastgele hesaplanır
+    - Mevcut oranlar `event_odds_history` tablosuna kaydedilir
+    - Event entity'si yeni oranlarla güncellenir
+    - Optimistic locking ile versiyon kontrolü yapılır
     - WebSocket üzerinden client'lara bildirim gönderilir
 
 ### 2.3 WebSocket Bildirimi
@@ -148,6 +149,19 @@ public void updateRandomOdds() {
   "updateDate": "2024-03-15T10:30:15"
 }
 ```
+
+### 2.5 Optimistic Locking
+Event entity'sinde versiyon kontrolü için:
+```java
+@Version
+private Long version;
+```
+
+Bu yaklaşımla:
+- Her oran değişikliği history tablosuna kaydedilir (Append-Only)
+- Versiyon kontrolü ile eşzamanlı güncellemeler yönetilir
+- Oran geçmişi sayesinde bahis işlemlerinde tutarlılık sağlanır
+- WebSocket ile anlık bildirimler gönderilir
 
 ## 3. Bahis Kuponu Oluşturma Akışı
 
@@ -176,26 +190,11 @@ public void updateRandomOdds() {
     - Mevcut bahisler + yeni bahisler <= 500
 
 3. Oran tutarlılığı kontrolü
-    - Pessimistic lock ile güncel oranlar alınır
-    - Beklenen oran ile güncel oran karşılaştırılır
-    - Farklılık varsa işlem reddedilir
-
-### 3.3 Veri Tutarlılığı Mekanizmaları
-
-#### Pessimistic Locking
-```java
-@Lock(LockModeType.PESSIMISTIC_WRITE)
-@Query("SELECT e FROM Event e WHERE e.id = :eventId")
-Optional<Event> findLatestEventByIdWithLock(@Param("eventId") Long eventId);
-```
-
-#### Transaction Yönetimi
-```java
-@Transactional(timeout = 2)
-public Betslip createBetslip(CreateBetslipRequest request, String customerId) {
-    // ... işlemler
-}
-```
+    - İşlem başlangıç zamanı (validationTime) kaydedilir
+    - Her bahis için:
+        * Güncel oranlar kontrol edilir
+        * Eğer oranlar değişmişse, validationTime anındaki oranlar history'den kontrol edilir
+        * Beklenen oran ile uyuşmazsa işlem reddedilir
 
 ## 4. Örnek Senaryo
 
@@ -205,7 +204,7 @@ public Betslip createBetslip(CreateBetslipRequest request, String customerId) {
 3. Kullanıcı 2.15 oranından Arsenal'e bahis yapmak ister
 4. CreateBetslip isteği gönderilir
 5. Backend:
-    - Maçı kilitler
+    - İşlem başlangıç zamanını kaydeder
     - Oranları kontrol eder
     - Limitleri kontrol eder
     - Kuponu kaydeder
@@ -217,37 +216,32 @@ public Betslip createBetslip(CreateBetslipRequest request, String customerId) {
 3. Tam bu sırada scheduled job oranı 2.20'ye günceller
 4. Client eski oran (2.15) ile istek gönderir
 5. Backend:
-    - Maçı kilitler
-    - Oranları kontrol eder
+    - İşlem başlangıç zamanını kaydeder
+    - Güncel oranın 2.20 olduğunu görür
+    - History'den işlem başlangıcındaki oranı kontrol eder
     - Oran değişikliği tespit edilir
     - İşlemi reddeder
-6. Hata yanıtı döner
+6. OddsChangedException yanıtı döner
 
 ## 5. Hata Senaryoları ve Çözümleri
 
 ### 5.1 Oran Değişikliği
 ```java
-if (!currentOdds.equals(betRequest.getExpectedOdds())) {
-        String errorMessage = String.format("Odds have changed for event ID: %d. Expected: %f, Current: %f",
-        betRequest.getEventId(), betRequest.getExpectedOdds(), currentOdds);
-        log.warn(errorMessage);
-        throw new IllegalStateException(errorMessage);
+if (!event.validateOddsNotChanged(betRequest.getSelectedBetType(), 
+        betRequest.getExpectedOdds(), validationTime)) {
+    throw new OddsChangedException(betRequest.getEventId(), 
+            betRequest.getExpectedOdds(), currentOdds);
 }
 ```
 
 ### 5.2 Limit Aşımı
 ```java
 if (totalExistingBets + request.getMultipleCount() > maxBetsPerEvent) {
-        String totalExistingBetsMessage = String.format("Maximum bet limit (%d) exceeded for event ID: %d",
-        maxBetsPerEvent, betRequest.getEventId());
-        throw new IllegalStateException(totalExistingBetsMessage);
+    throw new IllegalStateException(
+        String.format("Maximum bet limit (%d) exceeded for event ID: %d",
+        maxBetsPerEvent, eventId));
 }
 ```
-
-### 5.3 Deadlock Önleme
-- Transaction timeout: 2 saniye
-- Pessimistic lock kullanımı
-- İşlem sırası: Önce limit kontrolü, sonra oran kontrolü
 
 ## 6. Monitoring ve Logging
 
@@ -273,7 +267,6 @@ public void logException(JoinPoint joinPoint, Throwable exception)
 
 ### Jasypt Şifreleme
 Uygulama, veritabanı şifresini encrypted olarak application.properties dosyasında saklamaktadır.
-
 
 #### Kullanım
 1. Şifre: sa

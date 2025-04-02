@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Random;
 
@@ -37,8 +36,8 @@ public class EventService {
     }
 
     @Transactional(readOnly = true)
-    public Event findLatestEventByIdWithLock(Long eventId) {
-        return eventRepository.findLatestEventByIdWithLock(eventId)
+    public Event findEventById(Long eventId) {
+        return eventRepository.findByIdWithOddsHistory(eventId)
                 .orElseThrow(() -> new EntityNotFoundException("Event not found with id: " + eventId));
     }
 
@@ -54,10 +53,11 @@ public class EventService {
 
     private void updateEventOdds(Event event) {
         double variation = 0.05;
-        event.setHomeWinOdds(adjustOdds(event.getHomeWinOdds(), variation));
-        event.setDrawOdds(adjustOdds(event.getDrawOdds(), variation));
-        event.setAwayWinOdds(adjustOdds(event.getAwayWinOdds(), variation));
-        event.setUpdateDate(LocalDateTime.now());
+        double newHomeWinOdds = adjustOdds(event.getHomeWinOdds(), variation);
+        double newDrawOdds = adjustOdds(event.getDrawOdds(), variation);
+        double newAwayWinOdds = adjustOdds(event.getAwayWinOdds(), variation);
+        
+        event.updateOdds(newHomeWinOdds, newDrawOdds, newAwayWinOdds);
     }
 
     private double adjustOdds(double currentOdds, double variation) {
