@@ -19,6 +19,6 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     @Query("SELECT e FROM Event e")
     List<Event> findAllWithLocking();
 
-    @Query("SELECT e FROM Event e LEFT JOIN FETCH e.oddsHistory WHERE e.id = :eventId")
+    @Query("SELECT e FROM Event e JOIN FETCH e.oddsHistory WHERE e.id = :eventId")
     Optional<Event> findByIdWithOddsHistory(@Param("eventId") Long eventId);
 } 
